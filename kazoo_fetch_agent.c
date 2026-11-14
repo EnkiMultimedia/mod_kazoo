@@ -158,6 +158,7 @@ static switch_xml_t fetch_handler(const char *section, const char *tag_name, con
 	if(event == NULL) {
 		if (switch_event_create(&event, SWITCH_EVENT_GENERAL) != SWITCH_STATUS_SUCCESS) {
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "error creating event for fetch handler\n");
+			switch_thread_rwlock_unlock(agent->lock);
 			return xml;
 		}
 	}
