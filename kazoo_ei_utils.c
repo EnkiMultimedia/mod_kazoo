@@ -1000,9 +1000,8 @@ int ei_mutex_free(ei_mutex_t *l, int nblock);
 
 void kz_erl_init()
 {
-#if (ERLANG_MAJOR == 10 && ERLANG_MINOR >= 3) || ERLANG_MAJOR >= 11
+	/* required by erl_interface since OTP 21, before any other ei call */
 	ei_init();
-#endif
 }
 
 void kz_erl_shutdown()
