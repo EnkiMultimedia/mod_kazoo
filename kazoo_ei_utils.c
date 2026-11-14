@@ -503,7 +503,8 @@ int ei_decode_string_or_binary_limited(char *buf, int *index, int maxsize, char 
 		return -1;
 	}
 
-	if (size > maxsize) {
+	/* the decoded value is followed by a NUL, so it needs size + 1 bytes */
+	if (size >= maxsize) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Requested decoding of %s with size %d into a buffer of size %d\n",
 		                  type == ERL_BINARY_EXT ? "binary" : "string", size, maxsize);
 		return -1;
