@@ -734,7 +734,7 @@ static switch_status_t handle_request_commands(ei_node_t *ei_node, erlang_pid *p
 
 	if (ei_decode_list_header(buf->buff, &buf->index, &propslist_length)) {
 		switch_core_session_rwunlock(session);
-		return SWITCH_STATUS_FALSE;
+		return erlang_response_badarg(rbuf);
 	}
 
 	for(n = 0; n < propslist_length; n++) {
