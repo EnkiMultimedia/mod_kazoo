@@ -975,11 +975,14 @@ static switch_status_t handle_request_json_api(ei_node_t *ei_node, erlang_pid *p
 
 	if (!jcmd) {
 	    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "json api error: %s\n", parse_end);
-   		ei_x_encode_tuple_header(rbuf, 2);
-   		ei_x_encode_atom(rbuf, "error");
-   		ei_x_encode_tuple_header(rbuf, 2);
-   		ei_x_encode_atom(rbuf, "parse_error");
-   		_ei_x_encode_string(rbuf, parse_end);
+		/* rbuf is NULL when the request came as a cast */
+		if (rbuf) {
+			ei_x_encode_tuple_header(rbuf, 2);
+			ei_x_encode_atom(rbuf, "error");
+			ei_x_encode_tuple_header(rbuf, 2);
+			ei_x_encode_atom(rbuf, "parse_error");
+			_ei_x_encode_string(rbuf, parse_end);
+		}
 		switch_safe_free(arg);
    		return status;
 	}
@@ -995,15 +998,17 @@ static switch_status_t handle_request_json_api(ei_node_t *ei_node, erlang_pid *p
 	status = switch_json_api_execute(jcmd, session, NULL);
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "json api (%i): %s\n", status , arg);
 
-   	response = cJSON_PrintUnformatted(jcmd);
-	ei_x_encode_tuple_header(rbuf, 2);
-	if (status == SWITCH_STATUS_SUCCESS) {
-		ei_x_encode_atom(rbuf, "ok");
-	} else {
-		ei_x_encode_atom(rbuf, "error");
+	if (rbuf) {
+		response = cJSON_PrintUnformatted(jcmd);
+		ei_x_encode_tuple_header(rbuf, 2);
+		if (status == SWITCH_STATUS_SUCCESS) {
+			ei_x_encode_atom(rbuf, "ok");
+		} else {
+			ei_x_encode_atom(rbuf, "error");
+		}
+		_ei_x_encode_string(rbuf, response);
+		switch_safe_free(response);
 	}
-	_ei_x_encode_string(rbuf, response);
-	switch_safe_free(response);
 
     cJSON_Delete(jcmd);
     switch_safe_free(arg);
