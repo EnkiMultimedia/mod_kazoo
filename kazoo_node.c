@@ -1253,7 +1253,7 @@ static switch_status_t handle_mod_kazoo_request(ei_node_t *ei_node, erlang_msg *
 	} else if (arity == 3 && !strncmp(atom, "$gen_call", 9)) {
 		switch_status_t status;
 		ei_send_msg_t *send_msg = NULL;
-		erlang_ref ref;
+		int tag_start, tag_len;
 
 		switch_malloc(send_msg, sizeof(*send_msg));
 		ei_x_new_with_version(&send_msg->buf);
@@ -1280,17 +1280,21 @@ static switch_status_t handle_mod_kazoo_request(ei_node_t *ei_node, erlang_msg *
 			return SWITCH_STATUS_GENERR;
 		}
 
-		/* ...ref()}, {_, _}} = Buf */
-		if (ei_decode_ref(buf->buff, &buf->index, &ref)) {
+		/* ...Tag}, {_, _}} = Buf
+		 * The tag is opaque: a reference before OTP 24, [alias | Ref] since.
+		 * It is sent back unchanged. */
+		tag_start = buf->index;
+		if (ei_skip_term(buf->buff, &buf->index)) {
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Received erlang call without a reply tag (ensure you are using Kazoo v2.14+).\n");
 			ei_x_free(&send_msg->buf);
 			switch_safe_free(send_msg);
 			return SWITCH_STATUS_GENERR;
 		}
+		tag_len = buf->index - tag_start;
 
-		/* send_msg->buf = {ref(), ... */
+		/* send_msg->buf = {Tag, ... */
 		ei_x_encode_tuple_header(&send_msg->buf, 2);
-		ei_x_encode_ref(&send_msg->buf, &ref);
+		ei_x_append_buf(&send_msg->buf, buf->buff + tag_start, tag_len);
 
 		status = handle_kazoo_request(ei_node, &msg->from, buf, &send_msg->buf);
 
@@ -1312,7 +1316,7 @@ static switch_status_t handle_net_kernel_request(ei_node_t *ei_node, erlang_msg 
 	int version, size, type, arity;
 	char atom[MAXATOMLEN + 1];
 	ei_send_msg_t *send_msg = NULL;
-	erlang_ref ref;
+	int tag_start, tag_len;
 
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Received net_kernel message, attempting to reply\n");
 
@@ -1359,11 +1363,17 @@ static switch_status_t handle_net_kernel_request(ei_node_t *ei_node, erlang_msg 
 		goto error;
 	}
 
-	/* {Pid, Ref}=Sender */
-	if (ei_decode_pid(buf->buff, &buf->index, &send_msg->pid) || ei_decode_ref(buf->buff, &buf->index, &ref)) {
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Unable to decode erlang pid or ref of the net_kernel tuple second element\n");
+	/* {Pid, Tag}=Sender, Tag is opaque (a reference, or [alias | Ref] since OTP 24) */
+	if (ei_decode_pid(buf->buff, &buf->index, &send_msg->pid)) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Unable to decode erlang pid of the net_kernel tuple second element\n");
 		goto error;
 	}
+	tag_start = buf->index;
+	if (ei_skip_term(buf->buff, &buf->index)) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Unable to decode the tag of the net_kernel tuple second element\n");
+		goto error;
+	}
+	tag_len = buf->index - tag_start;
 
 	ei_get_type(buf->buff, &buf->index, &type, &size);
 
@@ -1389,7 +1399,7 @@ static switch_status_t handle_net_kernel_request(ei_node_t *ei_node, erlang_msg 
 
 	/* To ! {Tag, Reply} */
 	ei_x_encode_tuple_header(&send_msg->buf, 2);
-	ei_x_encode_ref(&send_msg->buf, &ref);
+	ei_x_append_buf(&send_msg->buf, buf->buff + tag_start, tag_len);
 	ei_x_encode_atom(&send_msg->buf, "yes");
 
 	if (switch_queue_trypush(ei_node->send_msgs, send_msg) != SWITCH_STATUS_SUCCESS) {
