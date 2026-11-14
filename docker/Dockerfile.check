@@ -1,0 +1,40 @@
+# Build check: FreeSWITCH, sofia-sip and spandsp from upstream, then this
+# mod_kazoo tree against them. Used by check-build.sh.
+ARG ERLANG_VERSION=29
+FROM erlang:${ERLANG_VERSION}
+
+ARG FS_VERSION=v1.11.3
+ARG SOFIA_SIP_VERSION=v1.13.19
+ARG SPANDSP_REF=master
+
+# FreeSWITCH 1.11 uses PCRE2; 1.10 needs PCRE1, which Debian 13 no longer ships
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        git ca-certificates build-essential cmake automake autoconf \
+        libtool libtool-bin pkg-config yasm binutils \
+        libssl-dev libedit-dev libsqlite3-dev libcurl4-openssl-dev \
+        libpcre2-dev libspeex-dev libspeexdsp-dev libtiff-dev \
+        libjpeg-dev libsndfile1-dev libldns-dev libopus-dev uuid-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /usr/src
+ENV PKG_CONFIG_PATH=/usr/local/freeswitch/lib/pkgconfig:/usr/local/lib/pkgconfig
+
+RUN git clone --depth 1 --branch ${SOFIA_SIP_VERSION} https://github.com/freeswitch/sofia-sip.git \
+    && cd sofia-sip && ./bootstrap.sh && ./configure && make -j"$(nproc)" && make install && ldconfig
+
+RUN git clone https://github.com/freeswitch/spandsp.git && cd spandsp && git checkout ${SPANDSP_REF} \
+    && ./bootstrap.sh && ./configure && make -j"$(nproc)" && make install && ldconfig
+
+RUN git clone --depth 1 --branch ${FS_VERSION} https://github.com/signalwire/freeswitch.git \
+    && cd freeswitch \
+    && printf 'applications/mod_commands\nendpoints/mod_sofia\nloggers/mod_console\n' > modules.conf \
+    && ./bootstrap.sh -j \
+    && ./configure --prefix=/usr/local/freeswitch --disable-libyuv --disable-libvpx \
+    && make -j"$(nproc)" && make install
+
+COPY . /usr/src/mod_kazoo
+RUN cd /usr/src/mod_kazoo \
+    && ./bootstrap.sh && ./configure && make -j"$(nproc)" && make install \
+    && so=/usr/local/freeswitch/lib/freeswitch/mod/mod_kazoo.so \
+    && readelf -lW "$so" | grep GNU_STACK \
+    && ! readelf -lW "$so" | grep GNU_STACK | grep -q E
