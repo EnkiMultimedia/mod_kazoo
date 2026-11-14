@@ -50,6 +50,7 @@ KAZOO_DECLARE_GLOBAL_STRING_FUNC(set_pref_ei_nodename, kazoo_globals.ei_nodename
 
 static int read_cookie_from_file(char *filename) {
 	int fd;
+	ssize_t len;
 	char cookie[MAXATOMLEN + 1];
 	char *end;
 	struct stat buf;
@@ -64,16 +65,20 @@ static int read_cookie_from_file(char *filename) {
 			return 2;
 		}
 		fd = open(filename, O_RDONLY);
-		if (fd < 1) {
+		if (fd < 0) {
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Unable to open cookie file %s : %d.\n", filename, errno);
 			return 2;
 		}
 
-		if (read(fd, cookie, MAXATOMLEN) < 1) {
+		/* terminate at what was read: erl writes the cookie without a newline */
+		len = read(fd, cookie, MAXATOMLEN);
+		close(fd);
+		if (len < 1) {
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Unable to read cookie file %s : %d.\n", filename, errno);
+			return 2;
 		}
 
-		cookie[MAXATOMLEN] = '\0';
+		cookie[len] = '\0';
 
 		/* replace any end of line characters with a null */
 		if ((end = strchr(cookie, '\n'))) {
@@ -98,7 +103,8 @@ void kz_set_hostname()
 {
 	if (kazoo_globals.hostname == NULL) {
 		char hostname[NODENAME_MAX];
-		memcpy(hostname, switch_core_get_hostname(), NODENAME_MAX);
+		/* switch_core_get_hostname() is shorter than NODENAME_MAX, copy the string only */
+		switch_copy_string(hostname, switch_core_get_hostname(), sizeof(hostname));
 		kazoo_globals.hostname_ent = gethostbyname(hostname);
 		if(kazoo_globals.hostname_ent != NULL) {
 			kazoo_globals.hostname = switch_core_strdup(kazoo_globals.pool, kazoo_globals.hostname_ent->h_name);
