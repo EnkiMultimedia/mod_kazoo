@@ -652,7 +652,7 @@ char * kz_expand_vars_pool(char *xml_str, switch_memory_pool_t *pool) {
 				if ((val = switch_core_get_variable_dup(var))) {
 					char *p;
 					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "expanded %s to %s\n", var, val);
-					for (p = val; p && *p && wp <= ep; p++) {
+					for (p = val; p && *p && wp < ep; p++) {
 						*wp++ = *p;
 					}
 					switch_safe_free(val);
