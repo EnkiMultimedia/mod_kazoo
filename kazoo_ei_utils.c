@@ -32,6 +32,7 @@
  * ei_helpers.c -- helper functions for ei
  *
  */
+#include <arpa/inet.h>
 #include "mod_kazoo.h"
 
 /* Stolen from code added to ei in R12B-5.
@@ -360,18 +361,19 @@ switch_status_t create_ei_cnode(const char *ip_addr, const char *name, struct ei
 	char nodename[MAXNODELEN + 1];
 	char cnodename[EI_MAXALIVELEN + 1];
 	char *atsign;
+	struct in_addr addr = { 0 };
 
 	/* copy the erlang interface nodename into something we can modify */
-	strncpy(cnodename, name, EI_MAXALIVELEN);
+	switch_copy_string(cnodename, name, sizeof(cnodename));
 
 	if ((atsign = strchr(cnodename, '@'))) {
 		/* we got a qualified node name, don't guess the host/domain */
 		snprintf(nodename, MAXNODELEN + 1, "%s", name);
 		/* truncate the alivename at the @ */
 		*atsign++ = '\0';
-		strncpy(hostname, atsign, EI_MAXHOSTNAMELEN);
+		switch_copy_string(hostname, atsign, sizeof(hostname));
 	} else {
-		strncpy(hostname, kazoo_globals.hostname, EI_MAXHOSTNAMELEN);
+		switch_copy_string(hostname, kazoo_globals.hostname, sizeof(hostname));
 		snprintf(nodename, MAXNODELEN + 1, "%s@%s", name, hostname);
 	}
 
@@ -384,8 +386,13 @@ switch_status_t create_ei_cnode(const char *ip_addr, const char *name, struct ei
 
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "creating nodename: %s\n", nodename);
 
+	/* ei wants the address as an in_addr, not as a string; keep 0.0.0.0 when it is not IPv4 */
+	if (ip_addr) {
+		inet_pton(AF_INET, ip_addr, &addr);
+	}
+
 	/* init the ec stuff */
-	if (ei_connect_xinit(ei_cnode, hostname, cnodename, nodename, (Erl_IpAddr) ip_addr, kazoo_globals.ei_cookie, 0) < 0) {
+	if (ei_connect_xinit(ei_cnode, hostname, cnodename, nodename, (Erl_IpAddr) &addr, kazoo_globals.ei_cookie, 0) < 0) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to initialize the erlang interface connection structure\n");
 		return SWITCH_STATUS_FALSE;
 	}
