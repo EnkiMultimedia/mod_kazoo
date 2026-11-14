@@ -859,6 +859,7 @@ static switch_status_t handle_request_bgapi(switch_thread_start_t func, ei_node_
 	switch_threadattr_t *thd_attr = NULL;
 	switch_uuid_t uuid;
 	char cmd[MAXATOMLEN + 1];
+	char uuid_str[SWITCH_UUID_FORMATTED_LENGTH + 1];
 
 	if (ei_decode_atom_safe(buf->buff, &buf->index, cmd)) {
 		return erlang_response_badarg(rbuf);
@@ -885,14 +886,17 @@ static switch_status_t handle_request_bgapi(switch_thread_start_t func, ei_node_
 
 	switch_uuid_get(&uuid);
 	switch_uuid_format(acs->uuid_str, &uuid);
-	switch_thread_create(&thread, thd_attr, func, acs, acs->pool);
+	/* the thread owns acs and may free it at any time once started */
+	switch_copy_string(uuid_str, acs->uuid_str, sizeof(uuid_str));
 
+	/* count the job before the thread can finish and decrement */
 	switch_atomic_inc(&ei_node->pending_bgapi);
+	switch_thread_create(&thread, thd_attr, func, acs, acs->pool);
 
 	if (rbuf) {
 		ei_x_encode_tuple_header(rbuf, 2);
 		ei_x_encode_atom(rbuf, "ok");
-		_ei_x_encode_string(rbuf, acs->uuid_str);
+		_ei_x_encode_string(rbuf, uuid_str);
 	}
 
 	return SWITCH_STATUS_SUCCESS;
@@ -1465,7 +1469,7 @@ static void *SWITCH_THREAD_FUNC receive_handler(switch_thread_t *thread, void *o
 	ei_node_t *ei_node = (ei_node_t *) obj;
 
 	switch_atomic_inc(&kazoo_globals.threads);
-	switch_atomic_inc(&ei_node->receive_handlers);
+	/* receive_handlers was incremented by the creator, see new_kazoo_node() */
 
 	switch_assert(ei_node != NULL);
 
@@ -1685,6 +1689,8 @@ switch_status_t new_kazoo_node(int nodefd, ErlConnect *conn) {
 		switch_threadattr_create(&thd_attr, ei_node->pool);
 		switch_threadattr_detach_set(thd_attr, 1);
 		switch_threadattr_stacksize_set(thd_attr, SWITCH_THREAD_STACKSIZE);
+		/* count the handler before it runs, so a fast disconnect waits for it */
+		switch_atomic_inc(&ei_node->receive_handlers);
 		switch_thread_create(&thread, thd_attr, receive_handler, ei_node, ei_node->pool);
 	}
 
